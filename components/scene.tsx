@@ -1,5 +1,5 @@
 "use client";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Model as Duck } from "./Duck";
 import { Physics, RigidBody } from "@react-three/rapier";
 import { Water } from "./Water";
@@ -7,22 +7,16 @@ import { Environment, OrbitControls } from "@react-three/drei";
 
 const Scene = () => {
 	return (
-		<Canvas 
-			camera={{ position: [0, 2, 4], fov: 50 }}
+		<Canvas
+			camera={{ position: [0, 4, 4], fov: 45 }}
 		>
-			<color attach="background" args={["#000000"]} />
-			<fog attach="fog" args={["#537b88", 10, 100]} />
-			<Environment preset="sunset" />
+			<color attach="background" args={["#9a9ac2"]} />
+			<fog attach="fog" args={["#9e7e9b", 10, 100]} />
+			<Environment preset="dawn" />
 			<OrbitControls makeDefault enableZoom={false} />
-			<Physics gravity={[0, 0, 0]}>
+			<Physics gravity={[0, -10, 0]}>
 				<Water />
-				<RigidBody 
-					position={[0, -0.1, 0]}
-					colliders="hull"
-					linearDamping={2}
-					angularDamping={0.1}
-				>
-					<Duck 
+					<Duck
 						colors={{
 							body: "#ffffff",
 							head: "#ffffff",
@@ -34,7 +28,6 @@ const Scene = () => {
 							eye_r: "#000000",
 						}}
 					/>
-				</RigidBody>
 			</Physics>
 		</Canvas>
 	);
