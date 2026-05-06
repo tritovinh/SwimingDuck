@@ -36,8 +36,9 @@ export const Water = () => {
 				flatShading={true}
 				transparent
 				opacity={0.8}
-				metalness={0.1}
-				roughness={0.1}
+				metalness={0}
+				roughness={0.3}
+				envMapIntensity={0.35}
 				side={THREE.DoubleSide}
 			/>
 		</mesh>

@@ -1,9 +1,19 @@
 import * as THREE from 'three'
-import React, { useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { GLTF } from 'three-stdlib'
 import { useFrame } from '@react-three/fiber'
 import { RigidBody, RapierRigidBody } from '@react-three/rapier'
+
+// Forward impulse
+const THRUST_IMPULSE = 0.5
+// turn left and right
+const TURN_IMPULSE_Y = 0.01
+
+type PaddleAction = 'forward' | 'turnLeft' | 'turnRight'
+
+const scratchQuat = new THREE.Quaternion()
+const scratchForward = new THREE.Vector3(0, 0, -1)
 
 type GLTFResult = GLTF & {
 	nodes: {
@@ -40,11 +50,47 @@ const getWaterHeight = (x: number, z: number, time: number): number => {
 	return Math.sin(x * 0.5 + time) * 0.2 + Math.sin(z * 0.3 + time) * 0.2;
 };
 
-export function Model(props: React.ComponentProps<'group'> & { colors?: DuckColors }) {
+export function Model(
+	props: React.ComponentProps<'group'> & {
+		colors?: DuckColors
+		rigidBodyRef?: React.RefObject<RapierRigidBody | null>
+	}
+) {
 	const { nodes, materials } = useGLTF('/duck.glb') as unknown as GLTFResult
-	const { colors, ...groupProps } = props
+	const { colors, rigidBodyRef: rigidBodyRefProp, ...groupProps } = props
+	const internalRigidRef = useRef<RapierRigidBody>(null)
+	const rigidBodyRef = rigidBodyRefProp ?? internalRigidRef
 
 	const groupRef = useRef<THREE.Group>(null);
+	const paddleQueueRef = useRef<PaddleAction[]>([])
+
+	useEffect(() => {
+		const queue = paddleQueueRef.current
+		const enqueue = (action: PaddleAction) => queue.push(action)
+
+		const onKeyDown = (e: KeyboardEvent) => {
+			switch (e.code) {
+				case 'KeyW':
+					enqueue('forward')
+					break
+				case 'KeyA':
+					enqueue('turnLeft')
+					break
+				case 'KeyD':
+					enqueue('turnRight')
+					break
+			}
+		}
+		const onBlur = () => {
+			queue.length = 0
+		}
+		window.addEventListener('keydown', onKeyDown)
+		window.addEventListener('blur', onBlur)
+		return () => {
+			window.removeEventListener('keydown', onKeyDown)
+			window.removeEventListener('blur', onBlur)
+		}
+	}, [])
 
 	const bodyMaterial = materials.Mat_body.clone()
 	if (colors?.body) bodyMaterial.color = new THREE.Color(colors.body)
@@ -70,23 +116,45 @@ export function Model(props: React.ComponentProps<'group'> & { colors?: DuckColo
 	const wingRMaterial = nodes.wing_r.material ? (nodes.wing_r.material as THREE.MeshStandardMaterial).clone() : materials.Mat_body.clone()
 	if (colors?.wing_r) wingRMaterial.color = new THREE.Color(colors.wing_r)
 
-	const rigidBodyRef = useRef<RapierRigidBody>(null);
-
 	useFrame(({ clock }) => {
 		if (!rigidBodyRef.current) return;
 
+		const body = rigidBodyRef.current;
+		const queue = paddleQueueRef.current
+
+		if (queue.length > 0) {
+			const rot = body.rotation()
+			scratchQuat.set(rot.x, rot.y, rot.z, rot.w)
+
+			for (let i = 0; i < queue.length; i++) {
+				const action = queue[i]
+				if (action === 'forward') {
+					scratchForward.set(0, 0, -1).applyQuaternion(scratchQuat)
+					scratchForward.y = 0
+					if (scratchForward.lengthSq() < 1e-10) scratchForward.set(0, 0, -1)
+					scratchForward.multiplyScalar(THRUST_IMPULSE)
+					body.applyImpulse({ x: scratchForward.x, y: 0, z: scratchForward.z }, true)
+				} else if (action === 'turnLeft') {
+					body.applyTorqueImpulse({ x: 0, y: TURN_IMPULSE_Y, z: 0 }, true)
+				} else if (action === 'turnRight') {
+					body.applyTorqueImpulse({ x: 0, y: -TURN_IMPULSE_Y, z: 0 }, true)
+				}
+			}
+			queue.length = 0
+		}
+
 		const time = clock.getElapsedTime();
-		const position = rigidBodyRef.current.translation();
+		const position = body.translation();
 		const currentWaterHeight = getWaterHeight(position.x, position.z, time);
 		const targetY = currentWaterHeight + 0.1;
 
 		const diff = targetY - position.y;
 		const force = diff * 50;
 
-		rigidBodyRef.current.applyImpulse({ x: 0, y: force * 0.01, z: 0 }, true);
+		body.applyImpulse({ x: 0, y: force * 0.01, z: 0 }, true);
 
-		const velocity = rigidBodyRef.current.linvel();
-		rigidBodyRef.current.setLinvel(
+		const velocity = body.linvel();
+		body.setLinvel(
 			{
 				x: velocity.x * 0.95,
 				y: velocity.y * 0.9,
@@ -101,10 +169,11 @@ export function Model(props: React.ComponentProps<'group'> & { colors?: DuckColo
 			ref={rigidBodyRef}
 			position={[0, 0.2, 0]}
 			colliders="hull"
-			linearDamping={2}
-			angularDamping={0.1}
+			linearDamping={0.5}
+			angularDamping={5}
+			enabledRotations={[false, true, false]}
 		>
-			<group {...groupProps} dispose={null} scale={1} ref={groupRef}>
+			<group {...groupProps} dispose={null} scale={1} ref={groupRef} rotation={[0, -Math.PI/2, 0]}>
 				<mesh geometry={nodes.body.geometry} material={bodyMaterial} position={[0.054, -0.027, 0.024]} rotation={[-Math.PI, 0, -Math.PI]} scale={[-0.378, -0.225, -0.234]} />
 				<mesh geometry={nodes.head.geometry} material={headMaterial} position={[-0.184, 0.36, 0.025]} rotation={[0, 0, -0.178]} scale={0.174} />
 				<mesh geometry={nodes.eye_l.geometry} material={eyeLMaterial} position={[-0.274, 0.385, 0.119]} scale={[-0.023, -0.014, -0.025]} />
