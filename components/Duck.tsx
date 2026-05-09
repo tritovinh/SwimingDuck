@@ -5,12 +5,9 @@ import { GLTF } from 'three-stdlib'
 import { useFrame } from '@react-three/fiber'
 import { RigidBody, RapierRigidBody } from '@react-three/rapier'
 
-// Forward impulse
-const THRUST_IMPULSE = 0.5
+const FORWARD_SPEED = 3.5
 // turn left and right
-const TURN_IMPULSE_Y = 0.01
-
-type PaddleAction = 'forward' | 'turnLeft' | 'turnRight'
+const TURN_IMPULSE_Y = 0.006
 
 const scratchQuat = new THREE.Quaternion()
 const scratchForward = new THREE.Vector3(0, 0, -1)
@@ -62,32 +59,28 @@ export function Model(
 	const rigidBodyRef = rigidBodyRefProp ?? internalRigidRef
 
 	const groupRef = useRef<THREE.Group>(null);
-	const paddleQueueRef = useRef<PaddleAction[]>([])
+	const pressedKeysRef = useRef<Set<string>>(new Set())
 
 	useEffect(() => {
-		const queue = paddleQueueRef.current
-		const enqueue = (action: PaddleAction) => queue.push(action)
+		const pressed = pressedKeysRef.current
 
 		const onKeyDown = (e: KeyboardEvent) => {
-			switch (e.code) {
-				case 'KeyW':
-					enqueue('forward')
-					break
-				case 'KeyA':
-					enqueue('turnLeft')
-					break
-				case 'KeyD':
-					enqueue('turnRight')
-					break
+			if (e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyD') {
+				pressed.add(e.code)
 			}
 		}
+		const onKeyUp = (e: KeyboardEvent) => {
+			pressed.delete(e.code)
+		}
 		const onBlur = () => {
-			queue.length = 0
+			pressed.clear()
 		}
 		window.addEventListener('keydown', onKeyDown)
+		window.addEventListener('keyup', onKeyUp)
 		window.addEventListener('blur', onBlur)
 		return () => {
 			window.removeEventListener('keydown', onKeyDown)
+			window.removeEventListener('keyup', onKeyUp)
 			window.removeEventListener('blur', onBlur)
 		}
 	}, [])
@@ -120,27 +113,32 @@ export function Model(
 		if (!rigidBodyRef.current) return;
 
 		const body = rigidBodyRef.current;
-		const queue = paddleQueueRef.current
+		const pressed = pressedKeysRef.current
 
-		if (queue.length > 0) {
+		if (pressed.has('KeyA')) {
+			body.applyTorqueImpulse({ x: 0, y: TURN_IMPULSE_Y, z: 0 }, true)
+		}
+		if (pressed.has('KeyD')) {
+			body.applyTorqueImpulse({ x: 0, y: -TURN_IMPULSE_Y, z: 0 }, true)
+		}
+
+		if (pressed.has('KeyW')) {
 			const rot = body.rotation()
 			scratchQuat.set(rot.x, rot.y, rot.z, rot.w)
+			scratchForward.set(0, 0, -1).applyQuaternion(scratchQuat)
+			scratchForward.y = 0
+			if (scratchForward.lengthSq() < 1e-10) scratchForward.set(0, 0, -1)
+			scratchForward.normalize().multiplyScalar(FORWARD_SPEED)
 
-			for (let i = 0; i < queue.length; i++) {
-				const action = queue[i]
-				if (action === 'forward') {
-					scratchForward.set(0, 0, -1).applyQuaternion(scratchQuat)
-					scratchForward.y = 0
-					if (scratchForward.lengthSq() < 1e-10) scratchForward.set(0, 0, -1)
-					scratchForward.multiplyScalar(THRUST_IMPULSE)
-					body.applyImpulse({ x: scratchForward.x, y: 0, z: scratchForward.z }, true)
-				} else if (action === 'turnLeft') {
-					body.applyTorqueImpulse({ x: 0, y: TURN_IMPULSE_Y, z: 0 }, true)
-				} else if (action === 'turnRight') {
-					body.applyTorqueImpulse({ x: 0, y: -TURN_IMPULSE_Y, z: 0 }, true)
-				}
-			}
-			queue.length = 0
+			const currentVel = body.linvel()
+			body.setLinvel(
+				{
+					x: scratchForward.x,
+					y: currentVel.y,
+					z: scratchForward.z,
+				},
+				true
+			)
 		}
 
 		const time = clock.getElapsedTime();
