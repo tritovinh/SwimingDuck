@@ -35,6 +35,9 @@ importers:
       three-custom-shader-material:
         specifier: ^6.4.0
         version: 6.4.0(@react-three/fiber@9.6.1(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(three@0.182.0))(react@19.2.3)(three@0.182.0)
+      three-stdlib:
+        specifier: ^2.36.1
+        version: 2.36.1(three@0.182.0)
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4
