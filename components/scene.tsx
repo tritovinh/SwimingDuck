@@ -6,6 +6,7 @@ import { Model as Duck } from "./Duck";
 import { Physics } from "@react-three/rapier";
 import type { RapierRigidBody } from "@react-three/rapier";
 import { Water } from "./Water";
+import { Terrain } from "./Terrain";
 import { Environment } from "@react-three/drei";
 
 /** Orbit focus slightly above the duck's center */
@@ -13,7 +14,8 @@ const LOOK_OFFSET_Y = 0.35;
 
 const MIN_DISTANCE = 1.2;
 const MAX_DISTANCE = 18;
-const MIN_PITCH = 0.12;
+const MIN_PITCH = -0.25;
+const MIN_CAMERA_Y = -1.2;
 const MAX_PITCH = Math.PI / 2 - 0.08;
 const HORIZONTAL_ROTATE_SENSITIVITY = 0.0045;
 const VERTICAL_ROTATE_SENSITIVITY = 0.003;
@@ -34,7 +36,6 @@ function DuckOrbitCamera({ targetRef }: { targetRef: React.RefObject<RapierRigid
 
 	useEffect(() => {
 		const el = gl.domElement;
-		el.style.touchAction = "none";
 
 		const onWheel = (e: WheelEvent) => {
 			e.preventDefault();
@@ -122,7 +123,7 @@ function DuckOrbitCamera({ targetRef }: { targetRef: React.RefObject<RapierRigid
 
 		const h = r * Math.cos(pitch);
 		const y = r * Math.sin(pitch);
-		camPos.set(lookTarget.x + h * Math.sin(yaw), lookTarget.y + y, lookTarget.z + h * Math.cos(yaw));
+		camPos.set(lookTarget.x + h * Math.sin(yaw), Math.max(lookTarget.y + y, MIN_CAMERA_Y), lookTarget.z + h * Math.cos(yaw));
 
 		camera.position.copy(camPos);
 		camera.lookAt(lookTarget);
@@ -135,13 +136,13 @@ const Scene = () => {
 	const duckBodyRef = useRef<RapierRigidBody>(null);
 
 	return (
-		<Canvas camera={{ position: [0, 4, 4], fov: 50 }}>
-			<color attach="background" args={["#9a9ac2"]} />
-			<fog attach="fog" args={["#9e7e9b", 10, 100]} />
+		<Canvas camera={{ position: [0, 4, 4], fov: 50 }} style={{ touchAction: "none" }}>
+			<color attach="background" args={["#9e7e9b"]} />
+			<fog attach="fog" args={["#9e7e9b", 15, 60]} />
 			<Environment preset="dawn" />
-			<DuckOrbitCamera targetRef={duckBodyRef} />
-			<Physics gravity={[0, -10, 0]}>
-				<Water />
+			<Physics timeStep="vary">
+				<Terrain targetRef={duckBodyRef} />
+				<Water targetRef={duckBodyRef} />
 				<Duck
 					rigidBodyRef={duckBodyRef}
 					colors={{
@@ -156,6 +157,7 @@ const Scene = () => {
 					}}
 				/>
 			</Physics>
+			<DuckOrbitCamera targetRef={duckBodyRef} />
 		</Canvas>
 	);
 };

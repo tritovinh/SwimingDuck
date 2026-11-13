@@ -4,10 +4,12 @@ import { useGLTF } from '@react-three/drei'
 import { GLTF } from 'three-stdlib'
 import { useFrame } from '@react-three/fiber'
 import { RigidBody, RapierRigidBody } from '@react-three/rapier'
+import { SPAWN_X, getTerrainHeight, getWaterHeight } from '@/lib/world'
 
 const FORWARD_SPEED = 3.5
 // turn left and right
-const TURN_IMPULSE_Y = 0.006
+const TURN_SPEED = 2.5
+const SHORE_HEIGHT = -0.5
 
 const scratchQuat = new THREE.Quaternion()
 const scratchForward = new THREE.Vector3(0, 0, -1)
@@ -29,7 +31,7 @@ type GLTFResult = GLTF & {
 		Mat_beak: THREE.MeshStandardMaterial
 		Mat_scarf: THREE.MeshStandardMaterial
 	}
-	animations: any[]
+	animations: THREE.AnimationClip[]
 }
 
 export interface DuckColors {
@@ -42,10 +44,6 @@ export interface DuckColors {
 	wing_l?: string | THREE.Color
 	wing_r?: string | THREE.Color
 }
-
-const getWaterHeight = (x: number, z: number, time: number): number => {
-	return Math.sin(x * 0.5 + time) * 0.2 + Math.sin(z * 0.3 + time) * 0.2;
-};
 
 export function Model(
 	props: React.ComponentProps<'group'> & {
@@ -110,65 +108,35 @@ export function Model(
 	if (colors?.wing_r) wingRMaterial.color = new THREE.Color(colors.wing_r)
 
 	useFrame(({ clock }) => {
-		if (!rigidBodyRef.current) return;
+		const body = rigidBodyRef.current
+		if (!body) return
 
-		const body = rigidBodyRef.current;
 		const pressed = pressedKeysRef.current
-
-		if (pressed.has('KeyA')) {
-			body.applyTorqueImpulse({ x: 0, y: TURN_IMPULSE_Y, z: 0 }, true)
-		}
-		if (pressed.has('KeyD')) {
-			body.applyTorqueImpulse({ x: 0, y: -TURN_IMPULSE_Y, z: 0 }, true)
-		}
+		const position = body.translation()
+		const velocity = body.linvel()
+		const rot = body.rotation()
 
 		if (pressed.has('KeyW')) {
-			const rot = body.rotation()
-			scratchQuat.set(rot.x, rot.y, rot.z, rot.w)
-			scratchForward.set(0, 0, -1).applyQuaternion(scratchQuat)
-			scratchForward.y = 0
-			if (scratchForward.lengthSq() < 1e-10) scratchForward.set(0, 0, -1)
-			scratchForward.normalize().multiplyScalar(FORWARD_SPEED)
-
-			const currentVel = body.linvel()
-			body.setLinvel(
-				{
-					x: scratchForward.x,
-					y: currentVel.y,
-					z: scratchForward.z,
-				},
-				true
-			)
+			scratchForward.set(0, 0, -FORWARD_SPEED).applyQuaternion(scratchQuat.set(rot.x, rot.y, rot.z, rot.w))
+			velocity.x = scratchForward.x
+			velocity.z = scratchForward.z
 		}
+		if (getTerrainHeight(position.x + Math.sign(velocity.x) * 0.5, position.z) > SHORE_HEIGHT) velocity.x = 0
+		if (getTerrainHeight(position.x, position.z + Math.sign(velocity.z) * 0.5) > SHORE_HEIGHT) velocity.z = 0
+		velocity.y = (getWaterHeight(position.x, position.z, clock.getElapsedTime()) + 0.1 - position.y) * 10
 
-		const time = clock.getElapsedTime();
-		const position = body.translation();
-		const currentWaterHeight = getWaterHeight(position.x, position.z, time);
-		const targetY = currentWaterHeight + 0.1;
-
-		const diff = targetY - position.y;
-		const force = diff * 50;
-
-		body.applyImpulse({ x: 0, y: force * 0.01, z: 0 }, true);
-
-		const velocity = body.linvel();
-		body.setLinvel(
-			{
-				x: velocity.x * 0.95,
-				y: velocity.y * 0.9,
-				z: velocity.z * 0.95,
-			},
-			true
-		);
-	});
+		const turn = Number(pressed.has('KeyA')) - Number(pressed.has('KeyD'))
+		body.setLinvel(velocity, true)
+		body.setAngvel({ x: 0, y: turn * TURN_SPEED, z: 0 }, true)
+	})
 
 	return (
 		<RigidBody
 			ref={rigidBodyRef}
-			position={[0, 0.2, 0]}
+			position={[SPAWN_X, 0.2, 0]}
 			colliders="hull"
-			linearDamping={0.5}
-			angularDamping={5}
+			linearDamping={3}
+			gravityScale={0}
 			enabledRotations={[false, true, false]}
 		>
 			<group {...groupProps} dispose={null} scale={1} ref={groupRef} rotation={[0, -Math.PI/2, 0]}>
